@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Production RAG in 2026: The Essentials Without the Noise</title>
+  <style>
+    body {
+      font-family: Georgia, serif;
+      font-size: 18px;
+      line-height: 1.8;
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      color: #292929;
+    }
+    h1 { font-size: 2.2em; font-weight: 700; line-height: 1.2; margin-bottom: 0.3em; }
+    h2 { font-size: 1.4em; font-weight: 700; margin-top: 2em; margin-bottom: 0.5em; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.3em; }
+    p { margin: 1em 0; }
+    img { width: 100%; max-width: 100%; border-radius: 6px; margin: 1.5em 0; }
+    pre {
+      background: #f4f4f4;
+      border-left: 4px solid #aaa;
+      padding: 16px 20px;
+      font-size: 0.82em;
+      line-height: 1.6;
+      overflow-x: auto;
+      border-radius: 4px;
+      white-space: pre;
+    }
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 0.88em;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: 1em;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5em 0;
+      font-size: 0.9em;
+    }
+    th {
+      background: #f0f0f0;
+      text-align: left;
+      padding: 10px 14px;
+      border: 1px solid #ddd;
+      font-weight: 700;
+    }
+    td {
+      padding: 9px 14px;
+      border: 1px solid #ddd;
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: #fafafa; }
+    ul, ol { padding-left: 1.5em; margin: 1em 0; }
+    li { margin: 0.4em 0; }
+    strong { font-weight: 700; }
+    em { font-style: italic; }
+    hr { border: none; border-top: 1px solid #e0e0e0; margin: 2.5em 0; }
+    .subtitle { font-size: 1.15em; color: #555; margin-top: 0.3em; margin-bottom: 2em; }
+    .callout {
+      background: #f8f8f8;
+      border-left: 4px solid #555;
+      padding: 14px 18px;
+      margin: 1.5em 0;
+      font-size: 0.95em;
+    }
+    .caption {
+      text-align: center;
+      font-size: 0.82em;
+      color: #888;
+      margin-top: -1em;
+      margin-bottom: 1.5em;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Production RAG in 2026: The Essentials Without the Noise</h1>
+<p class="subtitle">Building reliable, scalable RAG systems that work in production — with lessons from finance, legal, and real-world incidents.</p>
+
+<img src="https://drive.google.com/uc?export=view&id=1u6di16aFymFvbO9o1uEDiEFdr1QEhCut" alt="Production RAG Pipeline Architecture">
+<p class="caption">Production RAG Pipeline Architecture — the full picture before we break it down.</p>
+
+<p>Most RAG guides give you a checklist without tradeoffs. This one doesn't. Every section is a decision, not a description.</p>
+
+<p><strong>Ingest → Retrieve → Rerank → Generate.</strong> Every stage compounds. Bad chunking degrades retrieval. Bad retrieval degrades generation. You can't fix it at the end.</p>
+
+<img src="https://drive.google.com/uc?export=view&id=1Ex2TtSMaGrzFNRzICSvx9iRRQ5qqBFy2" alt="High-Level RAG Pipeline: Raw Documents → Parsing & Chunking → Vector DB → Retrieval Pipeline → LLM Generation → User">
+<p class="caption">High-level pipeline — six stages, each one a potential failure point.</p>
+
+<hr>
+
+<h2>1. Metadata schema</h2>
+
+<p>The minimum viable schema. Every field earns its place.</p>
+
+<pre><code>{
+  "chunk_id": "SEC_10K_ACME_Q4_2025_45_2",
+  "parent_chunk_id": "SEC_10K_ACME_Q4_2025_45",
+  "embedding_model_version": "bge-m3-v1.0",
+  "indexed_at": "2025-03-07T17:00:00+00:00",
+  "file_hash": "a1b2c3d4...",
+  "source_type": "regulatory"
+}</code></pre>
+
+<ul>
+  <li><strong><code>embedding_model_version</code></strong> — model upgrades silently corrupt retrieval without this. Old and new vectors are incompatible.</li>
+  <li><strong><code>indexed_at</code></strong> not <code>created_at</code> — these differ. Filing date vs indexing date drives freshness decay differently.</li>
+  <li><strong><code>source_type</code></strong> — mandatory for multi-corpus. Support KB, news, regulatory, product must never bleed.</li>
+  <li><strong><code>file_hash</code></strong> — SHA-256 at ingestion. Verify content integrity at retrieval time.</li>
+</ul>
+
+<hr>
+
+<h2>2. Chunking strategies</h2>
+
+<table>
+  <thead>
+    <tr><th>Strategy</th><th>When to use</th><th>When to avoid</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Fixed / recursive</td><td>High-update corpora, live filings, incremental pipelines</td><td>Structured docs where section boundaries carry meaning</td></tr>
+    <tr><td>Semantic</td><td>Low-update archives, stable prose</td><td>High-update corpora — non-deterministic, breaks incremental updates</td></tr>
+    <tr><td>Parent-child</td><td>Most production systems — precision on retrieval, context for generation</td><td>Very small corpora where the infra overhead isn't justified</td></tr>
+    <tr><td>Hierarchical / section-level</td><td>Multi-hop queries, legal/regulatory docs with defined structure</td><td>Unstructured documents without clear section boundaries</td></tr>
+    <tr><td>Sentence-window</td><td>High-precision factual lookups</td><td>Long-form synthesis queries</td></tr>
+  </tbody>
+</table>
+
+<p><strong>The one rule that overrides everything:</strong> update frequency determines strategy. Semantic chunking is non-deterministic — incremental updates produce inconsistent boundaries. Use fixed/recursive for anything that changes.</p>
+
+<p><strong>Parent-child default:</strong> index child chunks (128 tokens) for retrieval precision. Store parent reference (512 tokens) in metadata. Expand to parent at retrieval time for LLM context.</p>
+
+<hr>
+
+<h2>3. Embedding model selection</h2>
+
+<table>
+  <thead>
+    <tr><th>Type</th><th>Examples</th><th>Best for</th><th>Tradeoff</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>General-purpose</td><td>bge-large-en-v1.5, nomic-embed-text-v1.5</td><td>Broad semantic search, mixed corpora</td><td>May underperform on domain benchmarks</td></tr>
+    <tr><td>Domain-specific</td><td>Voyage-finance-2, Voyage-law-2, Cohere embed-v3</td><td>Finance, legal — measurable recall gains</td><td>API cost, data leaves env</td></tr>
+    <tr><td>Multilingual</td><td>BGE-M3 (100+ langs)</td><td>Cross-language retrieval</td><td>Higher memory footprint</td></tr>
+    <tr><td>Asymmetric / long-doc</td><td>OpenAI text-embedding-3, Jina v3</td><td>Short query vs long document</td><td>API-only or large self-host</td></tr>
+    <tr><td>Sparse</td><td>BM25, SPLADE</td><td>Exact terms, tickers, clause IDs, SKUs</td><td>No semantic understanding — use as BM25 leg only</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Dimension vs recall:</strong></p>
+
+<table>
+  <thead>
+    <tr><th>Dimension</th><th>Recall vs baseline</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>384</td><td>-5–8%</td><td>Fast and cheap; high-volume corpora</td></tr>
+    <tr><td>768</td><td>Baseline</td><td>General-purpose sweet spot</td></tr>
+    <tr><td>1024</td><td>+2–5%</td><td>Measurable gains on finance/legal</td></tr>
+    <tr><td>1536</td><td>+5–10%</td><td>OpenAI text-embedding-3-large; top MTEB</td></tr>
+  </tbody>
+</table>
+
+<p>At 10M+ chunks, dimension and quantization are cost decisions, not afterthoughts.</p>
+
+<hr>
+
+<h2>4. The five questions before you commit to any architecture</h2>
+
+<pre><code>1. QUERY TYPE?
+   Factual/lookup       → fixed chunks, small (100–200 tokens)
+   Synthesis/reasoning  → parent-child
+   Multi-hop            → hierarchical or graph-based
+
+2. UPDATE FREQUENCY?
+   High (daily/weekly)  → fixed/recursive chunking
+   Low (archival)       → semantic chunking acceptable
+
+3. DATA RESIDENCY?
+   Required             → self-hosted embeddings (BGE-M3, Nomic, Jina)
+   Not required         → API viable (Voyage, Cohere embed-v3)
+
+4. EXACT TERMS IN QUERIES? (tickers, clause IDs, SKUs)
+   Yes                  → hybrid search non-negotiable
+   No                   → dense-only first; add BM25 if recall is insufficient
+
+5. SCALE?
+   &lt;1M chunks           → dimension choice is minor
+   1M–10M chunks        → 768 vs 1024 storage cost becomes real
+   10M+ chunks          → int8 quantization + dimension are cost-critical</code></pre>
+
+<hr>
+
+<h2>5. Retrieval strategies</h2>
+
+<img src="https://drive.google.com/uc?export=view&id=1LSnGxQgWL_Szj8kWTt6P9WeI8W2smNGt" alt="Retrieval Pipeline Detail: User Query → Metadata Filter → Sparse + Dense Search → RRF → Cross-Encoder Gate → Rerank → MMR → Freshness → Final Context to LLM">
+<p class="caption">The full retrieval pipeline — every stage is optional except the first two.</p>
+
+<table>
+  <thead>
+    <tr><th>Strategy</th><th>Best for</th><th>Avoid when</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Dense (vector)</td><td>Semantic, paraphrased queries</td><td>Exact-match terms — tickers, IDs, SKUs</td></tr>
+    <tr><td>Sparse (BM25)</td><td>Exact terms, codes, proper nouns</td><td>Semantic or paraphrased queries</td></tr>
+    <tr><td>Hybrid (dense + sparse via RRF)</td><td>Most production systems</td><td>Very small corpora — infra overhead not worth it</td></tr>
+    <tr><td>Parent-child expansion</td><td>Precision retrieval + full context for generation</td><td>No parent-child schema in place</td></tr>
+    <tr><td>Cross-encoder reranking</td><td>When ANN top-k ordering is insufficient</td><td>CPU-only stacks without gating — dominates latency</td></tr>
+    <tr><td>MMR</td><td>Synthesis queries needing breadth</td><td>Focused factual/numeric queries — hurts precision</td></tr>
+    <tr><td>Graph-guided</td><td>Multi-hop, entity-centric, relationship queries</td><td>Corpora without NER infrastructure</td></tr>
+    <tr><td>Metadata-filtered</td><td>Multi-corpus, time-sensitive queries</td><td>Single-corpus with no isolation requirements</td></tr>
+  </tbody>
+</table>
+
+<p><strong>The retrieval stack in order:</strong></p>
+<pre><code>Query → metadata filter → parallel sparse + dense → RRF
+      → cross-encoder gate → rerank (top 20) → MMR (optional)
+      → freshness weighting → parent-child expansion → LLM</code></pre>
+
+<p><strong>p99 latency per component:</strong></p>
+
+<table>
+  <thead>
+    <tr><th>Component</th><th>Latency</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Query embedding</td><td>~10–30ms (local) / ~50–100ms (API)</td></tr>
+    <tr><td>Sparse + dense (parallel)</td><td>~20–80ms</td></tr>
+    <tr><td>RRF fusion</td><td>~1–2ms</td></tr>
+    <tr><td>Cross-encoder rerank top 20</td><td>~30–80ms (GPU) / ~200–500ms (CPU)</td></tr>
+    <tr><td>MMR (optional)</td><td>~5–20ms</td></tr>
+    <tr><td>Freshness weighting</td><td>~1ms</td></tr>
+    <tr><td><strong>Total retrieval p99</strong></td><td><strong>~70–140ms (GPU) / ~300–800ms (CPU-only)</strong></td></tr>
+    <tr><td>LLM generation</td><td>~500ms–3s+</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Freshness decay by corpus:</strong></p>
+
+<table>
+  <thead>
+    <tr><th>Corpus</th><th>Decay window</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Finance / news</td><td>90 days</td></tr>
+    <tr><td>Legal / regulatory</td><td>10 years</td></tr>
+    <tr><td>Static archive</td><td>Disable freshness entirely</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2>6. Vector DB: when pgvector is enough and when it isn't</h2>
+
+<p>HNSW must fit in RAM to deliver sub-50ms latency. Forced to SSD → pointer chasing → thousands of random reads per query. RAM is ~80× more expensive than SSD. 100M vectors at 1536 dims = ~800GB RAM = ~$5,300/month vs ~$65/month on SSD.</p>
+
+<table>
+  <thead>
+    <tr><th>Corpus size</th><th>Use</th><th>Latency target</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>&lt; 10M chunks</td><td><code>pgvector</code></td><td>p95 &lt; 500ms</td><td>Full SQL + ACID + JOINs. Zero new infra.</td></tr>
+    <tr><td>10M–100M</td><td>Qdrant</td><td>p99 &lt; 100ms</td><td>Native hybrid; light filter support</td></tr>
+    <tr><td>100M+</td><td>Zilliz / Milvus</td><td>Ultra-low p99</td><td>Enterprise scale; minimal SQL</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Index type selection:</strong></p>
+
+<table>
+  <thead>
+    <tr><th>Index</th><th>Memory</th><th>Recall</th><th>Best for</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Flat (brute-force)</td><td>High</td><td>100% exact</td><td>&lt;100k chunks, recall baseline</td></tr>
+    <tr><td>HNSW</td><td>High</td><td>95–99%</td><td>&lt;100M chunks, latency-critical production</td></tr>
+    <tr><td>IVF</td><td>Low</td><td>90–98%</td><td>10M+ chunks, memory-constrained</td></tr>
+    <tr><td>IVF+PQ</td><td>Very low</td><td>85–95%</td><td>100M+ chunks, storage-critical</td></tr>
+    <tr><td>ScaNN</td><td>Moderate</td><td>97–99%</td><td>High-QPS, Google-scale</td></tr>
+  </tbody>
+</table>
+
+<p>Don't buy distributed until you have a distributed problem. If you're already on a dedicated vector DB: enable <strong>int8 quantization</strong> — 4× memory reduction, &lt;1% recall loss.</p>
+
+<hr>
+
+<h2>7. Graph-based retrieval: when to use it and when not to</h2>
+
+<table>
+  <thead>
+    <tr><th>Use graph when</th><th>Skip graph when</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Queries involve multi-hop reasoning ("who owns the entity that filed this?")</td><td>Pure semantic similarity — vector search is faster and simpler</td></tr>
+    <tr><td>Cross-document entity links are required</td><td>Unstructured docs without entity extraction</td></tr>
+    <tr><td>You have structured knowledge (regulatory ontologies, product taxonomies)</td><td>100M+ nodes — graph traversal is operationally expensive</td></tr>
+    <tr><td>Entity-centric queries ("all filings mentioning counterparty X")</td><td>No NER infrastructure — entity extraction quality gates graph quality</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Graph vs hierarchical chunking:</strong></p>
+
+<table>
+  <thead>
+    <tr><th>Need</th><th>Hierarchical chunking</th><th>Graph DB</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Section → sub-section context</td><td>✅ Sufficient</td><td>Overkill</td></tr>
+    <tr><td>Cross-document entity links</td><td>❌ Cannot represent</td><td>✅ Required</td></tr>
+    <tr><td>Multi-hop ownership/reference</td><td>❌ Cannot traverse</td><td>✅ Required</td></tr>
+    <tr><td>Operational cost</td><td>Low</td><td>High — NER + graph infra</td></tr>
+  </tbody>
+</table>
+
+<p>Rule of thumb: "more context around this passage" → hierarchical chunking. "Which entities/docs are related to X" → graph.</p>
+
+<hr>
+
+<h2>8. Architectural tradeoffs</h2>
+
+<table>
+  <thead>
+    <tr><th>Component</th><th>Tradeoff</th><th>When to skip</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Hybrid search</td><td>Dual indexing, +20–50ms</td><td>Dense-only sufficient for small corpora</td></tr>
+    <tr><td>Cross-encoder rerank</td><td>+30–200ms per query</td><td>Gate by score gap; skip when top-k is unambiguous</td></tr>
+    <tr><td>MMR diversity</td><td>Lowers precision on focused queries</td><td>Disable for factual/numeric lookups</td></tr>
+    <tr><td>Chunk overlap (20%)</td><td>+20% storage + embedding compute</td><td>Use parent-child instead</td></tr>
+    <tr><td>Semantic chunking</td><td>Slower, non-deterministic</td><td>Fixed/recursive for high-update corpora</td></tr>
+    <tr><td>Freshness decay</td><td>Can bury authoritative historical docs</td><td>Disable for static legal/compliance</td></tr>
+    <tr><td>int8 quantization</td><td>1–5% recall degradation</td><td>Only when storage cost dominates; run recall regression first</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2>9. Cost: optimize the right leg</h2>
+
+<table>
+  <thead>
+    <tr><th>Component</th><th>Cost</th><th>Lever</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Query embedding</td><td>~$0.0001/query — negligible</td><td>Self-host to eliminate API cost at scale</td></tr>
+    <tr><td>Vector search</td><td>Cheap</td><td>Monitor hot paths</td></tr>
+    <tr><td>Cross-encoder</td><td>Free if self-hosted</td><td>Gate by score gap</td></tr>
+    <tr><td><strong>LLM generation</strong></td><td><strong>80–95% of per-query cost</strong></td><td><strong>Primary target</strong></td></tr>
+    <tr><td>Semantic caching</td><td>Cuts 20–40% of LLM calls</td><td>Cache by embedding similarity</td></tr>
+    <tr><td>Model routing</td><td>60–70% LLM cost reduction</td><td>Cheap model for simple; frontier for complex</td></tr>
+  </tbody>
+</table>
+
+<p>10M doc ingestion ≈ $200 CPU cost. LLM generation at scale ≈ $50k/month. Always optimize the generation leg first.</p>
+
+<hr>
+
+<h2>10. Source contamination</h2>
+
+<img src="https://drive.google.com/uc?export=view&id=1FiwkI-h6XebOUGmQNqPF-I4lezQeBggt" alt="Multi-Source Contamination Prevention: Query Classifier routes Support, Regulatory, News, and General queries to isolated corpora with strict metadata filters">
+<p class="caption">Source-type isolation architecture — route before you retrieve, never after.</p>
+
+<p>Air Canada's chatbot told a grieving passenger a bereavement discount existed — it didn't. The court held Air Canada liable. NYC's MyCity chatbot fed business owners fabricated local law information. Both are retrieval failures: the system had no mechanism to enforce where answers could come from.</p>
+
+<p><strong>Route before you retrieve. Never after.</strong></p>
+
+<table>
+  <thead>
+    <tr><th>Config key</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>primary_source</code></td><td>MUST retrieve from here</td></tr>
+    <tr><td><code>blocked_sources</code></td><td>NEVER retrieve from here</td></tr>
+    <tr><td><code>max_age_hours</code></td><td>Time window (e.g. 24h for news)</td></tr>
+    <tr><td><code>fallback_allowed</code></td><td>Allow other sources if empty?</td></tr>
+  </tbody>
+</table>
+
+<ul>
+  <li>Support queries → block news, regulatory, product entirely</li>
+  <li>News queries → enforce <code>indexed_at &gt; now - 24h</code></li>
+  <li>Regulatory queries → block news + marketing</li>
+</ul>
+
+<p>Metadata filters are deterministic. Semantic similarity is not. Never use similarity to enforce corpus boundaries.</p>
+
+<hr>
+
+<h2>11. Risk matrix</h2>
+
+<table>
+  <thead>
+    <tr><th>Risk</th><th>Symptom</th><th>Fix</th><th>Effort</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Numbers / dates wrong</td><td><code>$10k expenses</code> → wrong doc</td><td>Metadata filter inside search</td><td>LOW</td></tr>
+    <tr><td>Semantic drift</td><td><code>pricing</code> → marketing docs</td><td>Cross-encoder rerank</td><td>MEDIUM</td></tr>
+    <tr><td>Context loss</td><td>Answers cut mid-sentence</td><td>Parent-child or 20% overlap</td><td>LOW</td></tr>
+    <tr><td>Duplicate results</td><td>3 chunks from same doc</td><td>MMR (weight=0.3)</td><td>LOW</td></tr>
+    <tr><td>Stale data</td><td>2021 filing beats 2026</td><td>Freshness decay or date filter</td><td>LOW</td></tr>
+    <tr><td>Missing citations</td><td>Claims without sources</td><td>Audit prompt + citation rate</td><td>MEDIUM</td></tr>
+    <tr><td>Silent embedding break</td><td>Recall drops after model upgrade</td><td><code>embedding_model_version</code> in schema</td><td>LOW</td></tr>
+    <tr><td>Source contamination</td><td>Support query returns wrong corpus</td><td>Source isolation + query routing</td><td>MEDIUM</td></tr>
+    <tr><td>Sustained contamination</td><td>Multiple queries cross-corpus</td><td>Emergency corpus isolation</td><td>HIGH</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2>12. Evaluation: four layers</h2>
+
+<table>
+  <thead>
+    <tr><th>Layer</th><th>Method</th><th>Frequency</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Synthetic QA</td><td>3–5 pairs per doc at ingestion</td><td>Every ingest</td></tr>
+    <tr><td>Golden tests</td><td>Curated queries + expected chunk IDs</td><td>Per release</td></tr>
+    <tr><td>User feedback</td><td>Thumbs down → promote to golden test</td><td>Continuous</td></tr>
+    <tr><td>LLM-as-Judge</td><td>Sample 5–10% of queries</td><td>Continuous</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Metric targets:</strong></p>
+
+<table>
+  <thead>
+    <tr><th>Metric</th><th>Target</th><th>Tool</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Context Precision @5</td><td>≥85%</td><td>Ragas</td></tr>
+    <tr><td>Context Recall @10</td><td>75–80%</td><td>Ragas</td></tr>
+    <tr><td>Faithfulness</td><td>≥90%</td><td>DeepEval</td></tr>
+    <tr><td>Chunk citation rate</td><td>≥90%</td><td>Custom</td></tr>
+  </tbody>
+</table>
+
+<p>Run golden suite in CI. Alert on &gt;2% recall drop. Block deploys that fail.</p>
+
+<hr>
+
+<h2>13. Embedding drift</h2>
+
+<table>
+  <thead>
+    <tr><th>Trigger</th><th>Action</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Before any model upgrade</td><td><code>pre_rollout_validation</code> against shadow index</td></tr>
+    <tr><td>After vendor API update</td><td>OpenAI/Cohere silently update — run nightly check</td></tr>
+    <tr><td>After re-indexing</td><td>Chunking changes shift distribution</td></tr>
+    <tr><td>Nightly</td><td>Catch gradual drift</td></tr>
+  </tbody>
+</table>
+
+<p>2% recall drop = alert. Pre-rollout A/B is mandatory for embedding model changes — it's the one you'll regret skipping most.</p>
+
+<hr>
+
+<h2>14. Production checklist</h2>
+
+<p><strong>Ingest:</strong> parent-child schema · <code>embedding_model_version</code> on every chunk · <code>source_type</code> for corpus isolation · SHA-256 <code>file_hash</code> · chunking strategy by update frequency</p>
+
+<p><strong>Retrieval:</strong> parallel sparse + dense · RRF (list of ranked lists, not separate args) · cross-encoder gating (score-type-aware thresholds) · freshness weighting by corpus · metadata filter inside search not after</p>
+
+<p><strong>Generation:</strong> inline citations <code>[1][2][3]</code> · citation validation · "not found in documents" fallback</p>
+
+<p><strong>Infrastructure:</strong> vector DB by chunk count not hype · int8 quantization if on dedicated DB · golden query set (min 100) · nightly drift check · contamination monitoring</p>
+
+<hr>
+
+<h2>The fundamental truth</h2>
+
+<p>Metadata-first filtering + chunk-level traceability + source-type isolation + four-layer evaluation = production RAG that scales without compliance nightmares, latency surprises, or cross-domain contamination.</p>
+
+<p>Every shortcut shows up in production. Usually at 2am.</p>
+
+<hr>
+
+<p><em>Full implementation with code — chunking, hybrid search, citation pipeline, evaluation framework, contamination detection, drift monitoring — in the extended guide.</em></p>
+
+</body>
+</html>
