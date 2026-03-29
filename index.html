@@ -86,14 +86,14 @@
 <h1>Production RAG in 2026: The Essentials Without the Noise</h1>
 <p class="subtitle">Building reliable, scalable RAG systems that work in production — with lessons from finance, legal, and real-world incidents.</p>
 
-<img src="architecture.webp" alt="Production RAG Pipeline Architecture">
+<img src="https://manohar02.github.io/manohar-prod-rag.github.io/architecture.webp" alt="Production RAG Pipeline Architecture">
 <p class="caption">Production RAG Pipeline Architecture — the full picture before we break it down.</p>
 
 <p>Most RAG guides give you a checklist without tradeoffs. This one doesn't. Every section is a decision, not a description.</p>
 
 <p><strong>Ingest → Retrieve → Rerank → Generate.</strong> Every stage compounds. Bad chunking degrades retrieval. Bad retrieval degrades generation. You can't fix it at the end.</p>
 
-<img src="pipeline.webp" alt="High-Level RAG Pipeline: Raw Documents → Parsing & Chunking → Vector DB → Retrieval Pipeline → LLM Generation → User">
+<img src="https://manohar02.github.io/manohar-prod-rag.github.io/pipeline.webp" alt="High-Level RAG Pipeline: Raw Documents → Parsing & Chunking → Vector DB → Retrieval Pipeline → LLM Generation → User">
 <p class="caption">High-level pipeline — six stages, each one a potential failure point.</p>
 
 <hr>
@@ -202,7 +202,7 @@
 
 <h2>5. Retrieval strategies</h2>
 
-<img src="retrieval.webp" alt="Retrieval Pipeline Detail: User Query → Metadata Filter → Sparse + Dense Search → RRF → Cross-Encoder Gate → Rerank → MMR → Freshness → Final Context to LLM">
+<img src="https://manohar02.github.io/manohar-prod-rag.github.io/retrieval.webp" alt="Retrieval Pipeline Detail: User Query → Metadata Filter → Sparse + Dense Search → RRF → Cross-Encoder Gate → Rerank → MMR → Freshness → Final Context to LLM">
 <p class="caption">The full retrieval pipeline — every stage is optional except the first two.</p>
 
 <table>
@@ -366,7 +366,7 @@
 
 <h2>10. Source contamination</h2>
 
-<img src="contamination.webp" alt="Multi-Source Contamination Prevention: Query Classifier routes Support, Regulatory, News, and General queries to isolated corpora with strict metadata filters">
+<img src="https://manohar02.github.io/manohar-prod-rag.github.io/contamination.webp" alt="Multi-Source Contamination Prevention: Query Classifier routes Support, Regulatory, News, and General queries to isolated corpora with strict metadata filters">
 <p class="caption">Source-type isolation architecture — route before you retrieve, never after.</p>
 
 <p>Air Canada's chatbot told a grieving passenger a bereavement discount existed — it didn't. The court held Air Canada liable. NYC's MyCity chatbot fed business owners fabricated local law information. Both are retrieval failures: the system had no mechanism to enforce where answers could come from.</p>
