@@ -112,6 +112,7 @@
 }</code></pre>
 
 <ul>
+  <li><strong><code>parent_chunk_id</code></strong> — enables parent-child expansion: retrieve small chunks for precision, pass parent to LLM for context.</li>
   <li><strong><code>embedding_model_version</code></strong> — model upgrades silently corrupt retrieval without this. Old and new vectors are incompatible.</li>
   <li><strong><code>indexed_at</code></strong> not <code>created_at</code> — these differ. Filing date vs indexing date drives freshness decay differently.</li>
   <li><strong><code>source_type</code></strong> — mandatory for multi-corpus. Support KB, news, regulatory, product must never bleed.</li>
